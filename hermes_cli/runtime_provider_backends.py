@@ -184,7 +184,8 @@ def _resolve_bedrock_runtime(requested_provider: str, model_cfg: Dict[str, Any],
     go through Converse regardless of model."""
     from agent.bedrock_adapter import (bedrock_openai_base_url, has_aws_credentials, is_anthropic_bedrock_model,
                                        is_openai_bedrock_model, resolve_aws_auth_env_var, resolve_bedrock_bearer_token,
-                                       resolve_bedrock_runtime_region, bedrock_guardrail_config)
+                                       resolve_bedrock_endpoint_url, resolve_bedrock_runtime_region,
+                                       bedrock_guardrail_config)
     from hermes_cli.config import load_config  # direct (not the origin delegate), as before
     rp = _rp()
     # Explicitly selected bedrock trusts boto3's credential chain (IMDS, ECS/Lambda roles, SSO)
@@ -202,12 +203,18 @@ def _resolve_bedrock_runtime(requested_provider: str, model_cfg: Dict[str, Any],
     bedrock_cfg = load_config().get("bedrock", {})
     # Region priority (config.yaml bedrock.region → env → us-east-1) lives in the adapter.
     region = resolve_bedrock_runtime_region({"bedrock": bedrock_cfg})
+    endpoint_url = resolve_bedrock_endpoint_url({"bedrock": bedrock_cfg})
     auth_source = resolve_aws_auth_env_var() or "aws-sdk-default-chain"
     guardrail_config = bedrock_guardrail_config({"bedrock": bedrock_cfg})
     current_model = str(target_model or model_cfg.get("default") or "").strip()
     has_bearer_token = bool(os.environ.get("AWS_BEARER_TOKEN_BEDROCK", "").strip())
-    runtime = rp._runtime("bedrock", "bedrock_converse", f"https://bedrock-runtime.{region}.amazonaws.com", "aws-sdk",
-                          source=auth_source, region=region, requested_provider=requested_provider)
+    runtime = rp._runtime("bedrock", "bedrock_converse", endpoint_url or f"https://bedrock-runtime.{region}.amazonaws.com",
+                          "aws-sdk", source=auth_source, region=region, requested_provider=requested_provider)
+    if endpoint_url:
+        # Carried separately from base_url so the boto3 client builder can pass it as
+        # endpoint_url= — boto3 otherwise reconstructs the AWS host from the region and
+        # silently bypasses the user's gateway.
+        runtime["endpoint_url"] = endpoint_url
     if is_openai_bedrock_model(current_model):
         bearer = resolve_bedrock_bearer_token()
         runtime.update(api_mode="codex_responses", base_url=bedrock_openai_base_url(region), api_key=bearer or "aws-sdk",

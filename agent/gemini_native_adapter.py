@@ -123,6 +123,43 @@ def is_native_gemini_base_url(base_url: str) -> bool:
     return "generativelanguage.googleapis.com" in normalized and not normalized.endswith("/openai")
 
 
+# Provider slugs that mean "Google AI Studio / Gemini native wire", regardless of which host
+# serves it. Mirrors agent/auxiliary_client.py::_GEMINI_NATIVE_PROVIDER_NAMES.
+GEMINI_NATIVE_PROVIDER_NAMES = frozenset({"gemini", "google", "google-gemini", "google-ai-studio"})
+
+
+def routes_native_gemini(provider: str, base_url: str, *, native_wire: Optional[bool] = None) -> bool:
+    """True when this route speaks Gemini's native REST wire.
+
+    Google's own host is native by default. A CUSTOM host stays on the OpenAI-compatible client
+    unless ``gemini.native_wire`` is enabled: a custom base URL has historically meant "an
+    OpenAI-compatible endpoint", and silently reinterpreting it would change the wire under
+    existing configs. The opt-in covers the other real case — a gateway (LiteLLM, Portkey, a
+    corporate proxy) fronting Gemini's native API, where hostname sniffing alone downgrades the
+    user to chat_completions and drops native thinking_config.
+
+    ``/openai`` always opts out; it is an explicit request for the compatible surface.
+    *native_wire* skips the config read (pass it when the caller already resolved the setting).
+    """
+    normalized = str(base_url or "").strip().rstrip("/").lower()
+    if normalized.endswith("/openai"):
+        return False
+    if is_native_gemini_base_url(base_url):
+        return True
+    if str(provider or "").strip().lower() not in GEMINI_NATIVE_PROVIDER_NAMES:
+        return False
+    return gemini_native_wire_enabled() if native_wire is None else bool(native_wire)
+
+
+def gemini_native_wire_enabled(config: Optional[Dict[str, Any]] = None) -> bool:
+    """``gemini.native_wire`` from config.yaml (default False). *config* skips the disk read."""
+    if config is None:
+        with contextlib.suppress(Exception):
+            from hermes_cli.config import load_config_readonly
+            config = load_config_readonly()
+    return bool(((config or {}).get("gemini") or {}).get("native_wire", False))
+
+
 def gemini_accepts_parameters_json_schema(base_url: str) -> bool:
     """``FunctionDeclaration.parametersJsonSchema`` exists only in the ``v1beta`` surface of
     generativelanguage (absent from ``v1`` / ``v1alpha`` content.proto); other versions and

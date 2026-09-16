@@ -1656,10 +1656,10 @@ def _ensure_copilot_headers(client_kwargs: dict) -> None:
 
 
 def _gemini_native_client(agent, client_kwargs: dict, httpx_verify, *, reason: str, shared: bool):
-    """Native Gemini client when the base_url is the Gemini API, else None."""
-    from agent.gemini_native_adapter import GeminiNativeClient, is_native_gemini_base_url
+    """Native Gemini client when this route speaks the Gemini REST wire, else None."""
+    from agent.gemini_native_adapter import GeminiNativeClient, routes_native_gemini
     base_url = str(client_kwargs.get("base_url", "") or "")
-    if not is_native_gemini_base_url(base_url):
+    if not routes_native_gemini(getattr(agent, "provider", ""), base_url):
         return None
     safe_kwargs = {
         k: v for k, v in client_kwargs.items()

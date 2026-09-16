@@ -99,17 +99,24 @@ def _require_boto3():
 def _cached_client(cache: Dict[str, Any], service: str, region: str):
     """Get or create a per-region boto3 client. Unscoped: the default credential chain, one client per
     region. Routed profile: one client per (home, service, region), built from that profile's scoped
-    ``AWS_*`` (falling back to the default chain only for what the profile does not set)."""
+    ``AWS_*`` (falling back to the default chain only for what the profile does not set).
+
+    A configured custom endpoint is passed as ``endpoint_url=``; boto3 otherwise rebuilds the AWS
+    host from the region and bypasses the user's gateway. Profiles are already separate cache slots,
+    so the endpoint does not need to join the key — call ``reset_client_cache()`` after changing it.
+    """
     from hermes_constants import get_hermes_home_override, hermes_home_key
+    endpoint_url = resolve_bedrock_endpoint_url()
+    extra = {"endpoint_url": endpoint_url} if endpoint_url else {}
     if get_hermes_home_override() is None:
         if region not in cache:
-            cache[region] = _require_boto3().client(service, region_name=region)
+            cache[region] = _require_boto3().client(service, region_name=region, **extra)
         return cache[region]
     key = (hermes_home_key(), service, region)
     client = _bedrock_clients_by_home.get(key)
     if client is None:
         boto3 = _require_boto3()
-        client = boto3.Session(**scoped_aws_session_kwargs()).client(service, region_name=region)
+        client = boto3.Session(**scoped_aws_session_kwargs()).client(service, region_name=region, **extra)
         _bedrock_clients_by_home[key] = client
     return client
 
@@ -338,6 +345,27 @@ def resolve_bedrock_runtime_region(config: Optional[Dict[str, Any]] = None) -> s
             config = load_config_readonly()
     cfg_region = str(((config or {}).get("bedrock") or {}).get("region") or "").strip()
     return cfg_region or resolve_bedrock_region()
+
+
+def resolve_bedrock_endpoint_url(config: Optional[Dict[str, Any]] = None) -> str:
+    """Custom Bedrock endpoint (``bedrock.endpoint_url`` in config.yaml, else ``BEDROCK_BASE_URL``).
+
+    Empty string means "use the AWS-derived host". Set it to route Converse through a gateway or
+    proxy (LiteLLM, a corporate egress, VPC PrivateLink): boto3 derives its endpoint from the
+    region alone, so without this the request silently leaves for AWS no matter what base_url the
+    runtime resolved. *config* skips the disk read.
+    """
+    if config is None:
+        with suppress(Exception):
+            from hermes_cli.config import load_config_readonly
+            config = load_config_readonly()
+    cfg_url = str(((config or {}).get("bedrock") or {}).get("endpoint_url") or "").strip()
+    if cfg_url:
+        return cfg_url.rstrip("/")
+    with suppress(Exception):
+        from agent.secret_scope import get_secret
+        return str(get_secret("BEDROCK_BASE_URL", "") or "").strip().rstrip("/")
+    return ""
 
 
 def bedrock_region_from_runtime_url(base_url: str) -> str:

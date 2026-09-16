@@ -650,8 +650,18 @@ DEFAULT_CONFIG = {
     # stronger/pricier coders, 0.65 = mid-tier, "" = let OpenRouter pick the strongest. Docs:
     # openrouter.ai/docs/guides/routing/routers/pareto-router
     "openrouter": {"response_cache": True, "response_cache_ttl": 300, "min_coding_score": 0.65},
+    "gemini": {  # Google AI Studio; only used when model.provider is a Gemini alias.
+        # Speak Gemini's native REST wire even when the base URL is NOT Google's own host — for a
+        # gateway/proxy (LiteLLM, Portkey, corporate egress) fronting the native API. Off by
+        # default: a custom base URL otherwise means an OpenAI-compatible endpoint. A URL ending
+        # in /openai always uses the compatible client regardless of this setting.
+        "native_wire": False,
+    },
     "bedrock": {  # AWS Bedrock; only used when model.provider is "bedrock".
         "region": "",  # empty = AWS_REGION env var → us-east-1
+        # Custom Converse endpoint (empty = the AWS host for the region). Set to route through a
+        # gateway/proxy (LiteLLM, corporate egress, VPC PrivateLink); BEDROCK_BASE_URL also works.
+        "endpoint_url": "",
         "discovery": {
             "enabled": True,           # auto-discover models via ListFoundationModels
             "provider_filter": [],     # restrict to these providers, e.g. ["anthropic", "amazon"]

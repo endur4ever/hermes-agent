@@ -507,8 +507,8 @@ class ChatCompletionsTransport(ProviderTransport):
             # keys (tags, reasoning, provider, ...) are unknown fields -> HTTP 400.
             # The native client only reads thinking_config, so drop everything else.
             try:
-                from agent.gemini_native_adapter import is_native_gemini_base_url
-                _native_gemini = is_native_gemini_base_url(params.get("base_url"))
+                from agent.gemini_native_adapter import routes_native_gemini
+                _native_gemini = routes_native_gemini(params.get("provider_name"), params.get("base_url"))
             except Exception:
                 _native_gemini = False
             if _native_gemini:
